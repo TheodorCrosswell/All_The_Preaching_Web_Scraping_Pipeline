@@ -36,6 +36,22 @@ title_replacements = {
     r"([a-z]+)(\d{4})": r"${1} ${2}",
 }
 
+section_preacher_replacements = {
+    r"[/w ]+ \d{4}": r"evaluate",
+    r"^(sermons|sermon clips|seminar|short videos by) (bro\.|pastor) (\w+) (\w+)$": r"${2} ${3} ${4}",
+    r"^(sermons|sermon clips|seminar|short videos by) pastor anderson$": r"pastor steven anderson",
+    r"^(sermons|sermon clips|seminar|short videos by) pastor jimenez$": r"pastor roger jimenez",
+    r"^(sermons|sermon clips|seminar|short videos by) pastor shelley$": r"pastor jonathan shelley",
+    r"^(sermons|sermon clips|seminar|short videos by) pastor awes$": r"pastor dillon awes",
+    r"^(sermons|sermon clips|seminar|short videos by) pastor thompson$": r"pastor aaron thompson",
+    r"^(sermons|sermon clips|seminar|short videos by) pastor taverner$": r"pastor ian taverner",
+    r"^(sermons|sermon clips|seminar|short videos by) pastor sepulveda$": r"pastor kevin sepulveda",
+    r"^(sermons|sermon clips|seminar|short videos by) pastor stucky$": r"pastor matthew stucky",
+    r"^(sermons|sermon clips|seminar|short videos by) pastor mejia$": r"pastor bruce mejia",
+    r"^(sermons|sermon clips|seminar|short videos by) pastor ressl$": r"pastor corbin ressl",
+    # replace nulls with "unknown"
+}
+
 preacher_names_replacements = {
     "pastor anderson": "pastor steven anderson",
     "steven anderson": "pastor steven anderson",
@@ -106,9 +122,9 @@ section_preacher_map = {
     "sermon clips pastor aaron thompson": "pastor aaron thompson",
     "sermons pastor dillon awes": "pastor dillon awes",
     "sermons bro. dillon awes": "pastor dillon awes",  # TODO need to make this more flexible, perhaps using regex
-    "sermons bro. raymond cooper": "pastor raymond cooper",
+    "sermons bro. raymond cooper": "brother raymond cooper",
     "sermons bro. ben naim": "pastor ben naim",
-    "sermons bro. chris segura": "pastor chris segura",
+    "sermons bro. chris segura": "brother chris segura",
     "sermons pastor matthew stucky": "pastor matthew stucky",
     "sermons pastor corbin ressl": "pastor corbin ressl",
     "sermons pastor steven anderson": "pastor steven anderson",
