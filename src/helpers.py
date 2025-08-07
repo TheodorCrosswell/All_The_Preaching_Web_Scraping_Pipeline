@@ -41,9 +41,12 @@ class CleanTranscriptDataFrameModel(PreScrapingDataFrameModel):
     transcript: str = pt.Field(unique=True, min_length=50)
 
 
-# class ChunkedRecord(pt.Model):
+# class ChunkedRecordDataFrameModel(PreScrapingDataFrameModel):
+#     mp4_url: str = pt.Field(
+#       unique=True,
+#       pattern=r"https://www.kjv1611only.com/video/\w+/\w+/\w+.mp4",
+#     )
 #     chunk: str = pt.Field(min_length=5)
-#     pass
 
 
 def get_records_from_archive_url(
@@ -62,7 +65,7 @@ def get_records_from_archive_url(
                     "section": str(current_section).lower(),
                     "title": str(tag.get("title", "").strip("'\" ")).lower(),
                     # "text": tag.get_text(strip=True).lower().strip(),
-                    "raw_video_url": tag["href"],
+                    "video_url": str(tag["href"]),
                 }
             )
     return records
@@ -82,7 +85,7 @@ def get_records_from_html_file(file: str) -> list[dict]:
                     "section": str(current_section).lower(),
                     "title": str(tag.get("title", "").strip("'\" ")).lower(),
                     # "text": tag.get_text(strip=True).lower().strip(),
-                    "raw_video_url": tag["href"],
+                    "video_url": str(tag["href"]),
                 }
             )
     return records
@@ -125,47 +128,55 @@ def get_section_preacher_df() -> pl.LazyFrame:
 
 def evaluate_preacher(title: str) -> str:
     preacher = "unknown"
-    for name, proper_name in preacher_names_replacements:
+    for name, proper_name in preacher_names_replacements.items():
         if name in title:
             preacher = proper_name
+            break
     return preacher
 
 
-def get_pre_scraping_df(scraped_records: list):
-    def evaluate_preacher(title: str) -> str:
-        preacher = "unknown"
-        for name, proper_name in preacher_names_replacements.items():
-            if name in title:
-                preacher = proper_name
-                break
-        return preacher
+evaluate_preacher_output_schema = {
+    "video_id": pl.Int64,
+    "section": pl.String,
+    "preacher": pl.String,
+    "title": pl.String,
+    "video_url": pl.String,
+}
 
-    def evaluate_preacher_map_batches(input_df: pl.DataFrame) -> pl.DataFrame:
-        output_df = input_df.map_rows(
-            lambda row: (row[0], row[1], row[2], row[3], evaluate_preacher(row[1]))
-        ).rename(
-            {
-                "column_0": "section",
-                "column_1": "title",
-                "column_2": "video_id",
-                "column_3": "video_url",
-                "column_4": "preacher",
-            }
-        )
-        return output_df
+
+def get_pre_scraping_df(
+    scraped_records: list | pl.DataFrame,
+) -> pt.DataFrame:  # changed this row to include df
+
+    section_preacher_df = get_section_preacher_df()
 
     df = (
         PreScrapingDataFrameModel.DataFrame(scraped_records)
         .lazy()
+        .select(
+            [
+                "section",
+                "title",
+                "video_url",
+            ]
+        )
         .filter(~pl.col("section").is_in(disallowed_sections))
-        .with_columns(
-            pl.col("raw_video_url")
-            .str.extract(
-                r"id=(\d+)", 1
-            )  # This regex looks for 'id=' followed by one or more digits (\d+)
+    )
+
+    for pattern, replacement in section_replacements.items():
+        df = df.with_columns(pl.col("section").str.replace_all(pattern, replacement))
+    for pattern, replacement in title_replacements.items():
+        df = df.with_columns(pl.col("title").str.replace_all(pattern, replacement))
+
+    df = (
+        df.with_columns(
+            # This extracts the video_id and remakes it, to avoid breaking if the video_url is incomplete (the site may have incomplete urls)
+            pl.col("video_url")
+            .str.extract(r"id=(\d+)", 1)
             .cast(int)
             .alias("video_id")
         )
+        # .drop("raw_video_url", strict=False)
         .filter(~pl.col("video_id").is_in(existing_video_ids))
         .with_columns(
             [
@@ -173,27 +184,48 @@ def get_pre_scraping_df(scraped_records: list):
                     pl.lit("https://allthepreaching.com/pages/video.php?id=")
                     + pl.col("video_id").cast(str)
                 ).alias("video_url"),
-                pl.col("section"),
+                # pl.col("section"),
             ]
         )
-        .drop("raw_video_url")
+        .join(section_preacher_df, pl.col("section"))
+        # .collect()
     )
-    for pattern, replacement in section_replacements.items():
-        df = df.with_columns(pl.col("section").str.replace_all(pattern, replacement))
-    for pattern, replacement in title_replacements.items():
-        df = df.with_columns(pl.col("title").str.replace_all(pattern, replacement))
-    section_preacher_df = get_section_preacher_df()
 
-    df = df.join(section_preacher_df, pl.col("section")).collect()
-
+    # --- Start of refactored block ---
     evaluate_preacher_df = (
-        df.lazy()
-        .filter(pl.col("preacher") == "evaluate")
-        .map_batches(evaluate_preacher_map_batches)
+        df.filter(pl.col("preacher") == "evaluate")
+        # Step 1: Apply the Python function directly to the "title" column
+        # and overwrite the "preacher" column with the result.
+        .with_columns(
+            pl.col("title")
+            .map_elements(evaluate_preacher, return_dtype=pl.String)
+            .alias("preacher")
+        )
+        # Step 2: Use the newly updated "preacher" column to create the new "title".
+        .with_columns(
+            pl.when(pl.col("preacher") != "unknown")
+            .then(pl.col("preacher") + " " + pl.col("section"))
+            .otherwise(pl.col("title"))
+            .alias("title")
+        )
+    )
+    # --- End of refactored block ---
+
+    df = (
+        df.update(evaluate_preacher_df, on="video_id")
+        # Order columns
+        .select(
+            [
+                "video_id",
+                "section",
+                "preacher",
+                "title",
+                "video_url",
+            ]
+        )
+        # Collect at the very end
         .collect()
     )
-
-    df = df.update(evaluate_preacher_df, on="video_id")
 
     try:
         df.validate()

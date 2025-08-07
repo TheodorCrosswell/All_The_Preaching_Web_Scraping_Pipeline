@@ -18,39 +18,40 @@ existing_video_ids = []  # connect this to DB
 
 section_replacements = {
     # Word pairs stuck together (lowercase)
-    r"(clips)(pastor)": r"${1} ${2}",
-    r"(clips)(bro)": r"${1} ${2}",
-    r"(sermons)(pastor)": r"${1} ${2}",
-    r"(sermons)(bro)": r"${1} ${2}",
-    r"(seminar)(pastor)": r"${1} ${2}",
-    r"(winning)(motivation)": r"${1} ${2}",
-    r"(winning)(tips)": r"${1} ${2}",
+    r"(clips|sermons|seminar)(pastor|bro)": r"${1} ${2}",
+    r"(winning)(motivation|tips)": r"${1} ${2}",
     r"(tribulation)(moments)": r"${1} ${2}",
     r"(by)(pastor)": r"${1} ${2}",
-    r"(lord)(conference)": r"${1} ${2}",
-    r"(james)(conference)": r"${1} ${2}",
-}
-
-title_replacements = {
+    r"(lord|james)(conference)": r"${1} ${2}",
+    r"(conference|class)(\d+)": r"${1} ${2}",
+    r"(bro\.)": r"brother",
+    r"\b(bro)\b": r"brother",
     # Year suffix: adds space between word and year
     r"([a-z]+)(\d{4})": r"${1} ${2}",
 }
 
-section_preacher_replacements = {
-    r"[/w ]+ \d{4}": r"evaluate",
-    r"^(sermons|sermon clips|seminar|short videos by) (bro\.|pastor) (\w+) (\w+)$": r"${2} ${3} ${4}",
-    r"^(sermons|sermon clips|seminar|short videos by) pastor anderson$": r"pastor steven anderson",
-    r"^(sermons|sermon clips|seminar|short videos by) pastor jimenez$": r"pastor roger jimenez",
-    r"^(sermons|sermon clips|seminar|short videos by) pastor shelley$": r"pastor jonathan shelley",
-    r"^(sermons|sermon clips|seminar|short videos by) pastor awes$": r"pastor dillon awes",
-    r"^(sermons|sermon clips|seminar|short videos by) pastor thompson$": r"pastor aaron thompson",
-    r"^(sermons|sermon clips|seminar|short videos by) pastor taverner$": r"pastor ian taverner",
-    r"^(sermons|sermon clips|seminar|short videos by) pastor sepulveda$": r"pastor kevin sepulveda",
-    r"^(sermons|sermon clips|seminar|short videos by) pastor stucky$": r"pastor matthew stucky",
-    r"^(sermons|sermon clips|seminar|short videos by) pastor mejia$": r"pastor bruce mejia",
-    r"^(sermons|sermon clips|seminar|short videos by) pastor ressl$": r"pastor corbin ressl",
-    # replace nulls with "unknown"
+title_replacements = {
+    r"(bro\.)": r"brother",
+    r"\b(bro)\b": r"brother",
+    # Year suffix: adds space between word and year
+    r"([a-z]+)(\d{4})": r"${1} ${2}",
 }
+
+# section_preacher_replacements = {
+#     r"[/w ]+ \d{4}": r"evaluate",
+#     r"^(sermons|sermon clips|seminar|short videos by) (bro\.|brother|pastor) (\w+) (\w+)$": r"${2} ${3} ${4}",
+#     r"^(sermons|sermon clips|seminar|short videos by) pastor anderson$": r"pastor steven anderson",
+#     r"^(sermons|sermon clips|seminar|short videos by) pastor jimenez$": r"pastor roger jimenez",
+#     r"^(sermons|sermon clips|seminar|short videos by) pastor shelley$": r"pastor jonathan shelley",
+#     r"^(sermons|sermon clips|seminar|short videos by) pastor awes$": r"pastor dillon awes",
+#     r"^(sermons|sermon clips|seminar|short videos by) pastor thompson$": r"pastor aaron thompson",
+#     r"^(sermons|sermon clips|seminar|short videos by) pastor taverner$": r"pastor ian taverner",
+#     r"^(sermons|sermon clips|seminar|short videos by) pastor sepulveda$": r"pastor kevin sepulveda",
+#     r"^(sermons|sermon clips|seminar|short videos by) pastor stucky$": r"pastor matthew stucky",
+#     r"^(sermons|sermon clips|seminar|short videos by) pastor mejia$": r"pastor bruce mejia",
+#     r"^(sermons|sermon clips|seminar|short videos by) pastor ressl$": r"pastor corbin ressl",
+#     # replace nulls with "unknown"
+# }
 
 preacher_names_replacements = {
     "pastor anderson": "pastor steven anderson",
@@ -61,13 +62,13 @@ preacher_names_replacements = {
     "roger jimenez": "pastor roger jimenez",
     "pastor thompson": "pastor aaron thompson",
     "aaron thompson": "pastor aaron thompson",
-    "bro dillon awes": "pastor dillon awes",
+    "brother dillon awes": "pastor dillon awes",
     "dillon awes": "pastor dillon awes",
     "pastor awes": "pastor dillon awes",
     "evangelist mejia": "pastor bruce mejia",
     "pastor mejia": "pastor bruce mejia",
     "bruce mejia": "pastor bruce mejia",
-    "bro stucky": "pastor matthew stucky",
+    "brother stucky": "pastor matthew stucky",
     "matthew stucky": "pastor matthew stucky",
     "deacon ressl": "pastor corbin ressl",
     "corbin ressl": "pastor corbin ressl",
@@ -79,11 +80,16 @@ preacher_names_replacements = {
     "pastor webb": "pastor webb",  # what is his first name?
     "deacon gonzalez": "deacon oliver gonzalez",
     "chris segura": "brother chris segura",
-    "bro segura": "brother chris segura",
-    "bro alex larson": "brother alexander larson",
+    "brother segura": "brother chris segura",
+    "brother alex larson": "brother alexander larson",
+    "brother alexander larson": "brother alexander larson",
     "alexander larson": "brother alexander larson",
+    "kevin roe": "brother kevin roe",
     "raymond cooper": "brother raymond cooper",
+    "daniel reiter": "brother daniel reiter",
+    "anselm urban": "brother anselm urban",
     "ben naim": "brother ben naim",
+    "caleb akinosho": "brother caleb akinosho",
 }
 
 section_preacher_map = {
@@ -123,7 +129,7 @@ section_preacher_map = {
     "sermons pastor dillon awes": "pastor dillon awes",
     "sermons bro. dillon awes": "pastor dillon awes",  # TODO need to make this more flexible, perhaps using regex
     "sermons bro. raymond cooper": "brother raymond cooper",
-    "sermons bro. ben naim": "pastor ben naim",
+    "sermons bro. ben naim": "brother ben naim",
     "sermons bro. chris segura": "brother chris segura",
     "sermons pastor matthew stucky": "pastor matthew stucky",
     "sermons pastor corbin ressl": "pastor corbin ressl",
