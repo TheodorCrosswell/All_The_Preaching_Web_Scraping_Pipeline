@@ -1,4 +1,4 @@
-# config.py
+"""This file contains dicts used to help processing the title, section, and preacher fields"""
 
 disallowed_sections = [
     "salvation",
@@ -13,8 +13,12 @@ disallowed_sections = [
     "volume 5",
     "volume 6",
 ]
+"""This filters out sections that are not relevant for RAG, such as music."""
 
 existing_video_ids = []  # connect this to DB
+"""This should contain all the video_ids from the database,
+allowing the pipeline to skip processing records
+that are already available"""
 
 section_replacements = {
     # Word pairs stuck together (lowercase)
@@ -29,6 +33,7 @@ section_replacements = {
     # Year suffix: adds space between word and year
     r"([a-z]+)(\d{4})": r"${1} ${2}",
 }
+"""This fixes some typos in the section field"""
 
 title_replacements = {
     r"(bro\.)": r"brother",
@@ -36,6 +41,7 @@ title_replacements = {
     # Year suffix: adds space between word and year
     r"([a-z]+)(\d{4})": r"${1} ${2}",
 }
+"""This fixes some typos in the title field"""
 
 # section_preacher_replacements = {
 #     r"[/w ]+ \d{4}": r"evaluate",
@@ -90,6 +96,7 @@ preacher_names_replacements = {
     "ben naim": "brother ben naim",
     "caleb akinosho": "brother caleb akinosho",
 }
+"""This is used to detect preacher names in the title and to return a standardized preacher name"""
 
 section_preacher_map = {
     "fbbf 2019": "evaluate",
@@ -169,3 +176,4 @@ section_preacher_map = {
     "landmarks": "unknown",
     "other videos": "unknown",
 }
+"""This is used to determine which sections should have the preacher's name extracted from the video title"""
