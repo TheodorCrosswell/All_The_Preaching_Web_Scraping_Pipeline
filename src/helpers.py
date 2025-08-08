@@ -9,44 +9,50 @@ import patito as pt
 import polars as pl
 from config import *
 
+video_url_pattern = r"^https://allthepreaching.com/pages/video.php\?id=\d+$"
+mp4_url_pattern = r"^(https?:\/\/)?(www\.)?[a-zA-Z0-9]+([\-\.]{1}[a-zA-Z0-9]+)*\.[a-zA-Z]{2,5}(:[0-9]{1,5})?(\/.*)?mp4$"
+mp3_url_pattern = r"^(https?:\/\/)?(www\.)?[a-zA-Z0-9]+([\-\.]{1}[a-zA-Z0-9]+)*\.[a-zA-Z]{2,5}(:[0-9]{1,5})?(\/.*)?mp3$"
+vtt_url_pattern = r"^(https?:\/\/)?(www\.)?[a-zA-Z0-9]+([\-\.]{1}[a-zA-Z0-9]+)*\.[a-zA-Z]{2,5}(:[0-9]{1,5})?(\/.*)?vtt$"
+valid_url_pattern = r"^(https?:\/\/)?(www\.)?[a-zA-Z0-9]+([\-\.]{1}[a-zA-Z0-9]+)*\.[a-zA-Z]{2,5}(:[0-9]{1,5})?(\/.*)?$"
+
 
 class PreScrapingDataFrameModel(pt.Model):
-    video_id: int = pt.Field(unique=True, ge=1)
+    video_id: int = pt.Field(unique=True)
     section: str = pt.Field(min_length=3)
     title: str = pt.Field(min_length=3)
     preacher: str = pt.Field(min_length=3)
     video_url: str = pt.Field(
-        unique=True,
-        pattern=r"^https://allthepreaching.com/pages/video.php\?id=\d{7}$",
+        unique=True, pattern=video_url_pattern
     )  # this may break when the site gets updated, since the new way is just "/video/..." instead of "https:/.../video/..."
 
 
-class CleanTranscriptDataFrameModel(PreScrapingDataFrameModel):
+class TranscriptDataFrameModel(PreScrapingDataFrameModel):
     mp4_url: str = pt.Field(
         unique=True,
-        pattern=r"https://www.kjv1611only.com/video/\w+/\w+/\w+.mp4",
+        pattern=mp4_url_pattern,
     )
     mp3_url: str = pt.Field(
         unique=True,
-        pattern=r"https://www.kjv1611only.com/video/\w+/\w+/\w+.mp3",
+        pattern=mp3_url_pattern,
         derived_from=(pl.col("mp4_url").str.replace("mp4", "mp3")),
     )
     vtt_url: str = pt.Field(
         unique=True,
-        pattern=r"https://www.kjv1611only.com/video/\w+/\w+/\w+.vtt",
+        pattern=vtt_url_pattern,
         derived_from=(pl.col("mp4_url").str.replace("mp4", "vtt")),
     )
     # txt_url: str = pt.Field() # Currently, vtt_to_txt.php is not available on ATP, so this field is unused
-    vtt: str = pt.Field(unique=True, min_length=50)
-    transcript: str = pt.Field(unique=True, min_length=50)
+    vtt: str = pt.Field(unique=True, min_length=5)
+    transcript: str = pt.Field(unique=True, min_length=5)
+    transcript_hash: int = pt.Field(unique=True)
 
 
-# class ChunkedRecordDataFrameModel(PreScrapingDataFrameModel):
-#     mp4_url: str = pt.Field(
-#       unique=True,
-#       pattern=r"https://www.kjv1611only.com/video/\w+/\w+/\w+.mp4",
-#     )
-#     chunk: str = pt.Field(min_length=5)
+class ChunkedRecordDataFrameModel(PreScrapingDataFrameModel):
+    mp4_url: str = pt.Field(
+        unique=True,
+        pattern=mp4_url_pattern,
+    )
+    chunk: str = pt.Field(min_length=5)
 
 
 def get_records_from_archive_url(
@@ -144,7 +150,7 @@ evaluate_preacher_output_schema = {
 }
 
 
-def get_pre_scraping_df(
+def to_pre_scraping_df(
     scraped_records: list | pl.DataFrame,
 ) -> pt.DataFrame:  # changed this row to include df
 
@@ -176,7 +182,7 @@ def get_pre_scraping_df(
             .cast(int)
             .alias("video_id")
         )
-        # .drop("raw_video_url", strict=False)
+        .unique("video_id")
         .filter(~pl.col("video_id").is_in(existing_video_ids))
         .with_columns(
             [
@@ -184,24 +190,21 @@ def get_pre_scraping_df(
                     pl.lit("https://allthepreaching.com/pages/video.php?id=")
                     + pl.col("video_id").cast(str)
                 ).alias("video_url"),
-                # pl.col("section"),
             ]
         )
         .join(section_preacher_df, pl.col("section"))
-        # .collect()
     )
 
-    # --- Start of refactored block ---
     evaluate_preacher_df = (
         df.filter(pl.col("preacher") == "evaluate")
-        # Step 1: Apply the Python function directly to the "title" column
+        # Apply the function directly to the "title" column
         # and overwrite the "preacher" column with the result.
         .with_columns(
             pl.col("title")
             .map_elements(evaluate_preacher, return_dtype=pl.String)
             .alias("preacher")
         )
-        # Step 2: Use the newly updated "preacher" column to create the new "title".
+        # Use the newly updated "preacher" column to create the new "title".
         .with_columns(
             pl.when(pl.col("preacher") != "unknown")
             .then(pl.col("preacher") + " " + pl.col("section"))
@@ -209,7 +212,6 @@ def get_pre_scraping_df(
             .alias("title")
         )
     )
-    # --- End of refactored block ---
 
     df = (
         df.update(evaluate_preacher_df, on="video_id")
@@ -233,6 +235,47 @@ def get_pre_scraping_df(
         print(e)
         # raise(e)
     return df
+
+
+def to_transcript_df(df: pt.DataFrame) -> pt.DataFrame:
+    df = (
+        TranscriptDataFrameModel.LazyFrame(df)
+        .derive()
+        .unique(
+            "video_id"
+        )  # TODO: shouldn't need this when scraping. I used it because I am adapting the existing dataset to the new format, and it has dupes.
+        # Filters must match TranscriptDataFrameModel field validation definitions
+        .filter([pl.col("mp4_url").str.contains(mp4_url_pattern)])
+        .filter([pl.col("mp3_url").str.contains(mp3_url_pattern)])
+        .filter([pl.col("vtt_url").str.contains(vtt_url_pattern)])
+        .filter([pl.col("transcript") != "."])
+        .filter([pl.col("vtt").str.len_chars() > 5])
+        .filter([pl.col("transcript").str.len_chars() > 5])
+        .with_columns(pl.col("transcript").hash().alias("transcript_hash"))
+        .unique(
+            [
+                "mp4_url",
+            ],
+            keep="first",
+        )
+        .unique(
+            [
+                "transcript_hash",
+            ],
+            keep="first",
+        )
+        .collect()
+    )
+    try:
+        df.validate()
+    except pt.DataFrameValidationError as e:
+        print(e)
+        # raise(e)
+    return df
+
+
+def to_chunked_record_df():
+    pass
 
 
 # message_404 = """<!DOCTYPE HTML PUBLIC "-//IETF//DTD HTML 2.0//EN">\n<html><head>\n<title>404 Not Found</title>\n</head><body>\n<h1>Not Found</h1>\n<p>The requested URL was not found on this server.</p>\n</body></html>\n"""

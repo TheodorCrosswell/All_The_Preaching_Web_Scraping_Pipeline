@@ -82,7 +82,6 @@ preacher_names_replacements = {
     "chris segura": "brother chris segura",
     "brother segura": "brother chris segura",
     "brother alex larson": "brother alexander larson",
-    "brother alexander larson": "brother alexander larson",
     "alexander larson": "brother alexander larson",
     "kevin roe": "brother kevin roe",
     "raymond cooper": "brother raymond cooper",
