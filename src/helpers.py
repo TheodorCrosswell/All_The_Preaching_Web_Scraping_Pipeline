@@ -10,6 +10,8 @@ import io
 import patito as pt
 import polars as pl
 from config import *
+import semchunk
+from transformers import AutoTokenizer
 
 # Regex patterns for validating urls
 video_url_pattern = r"^https://allthepreaching.com/pages/video.php\?id=\d+$"
@@ -41,7 +43,7 @@ class PreScrapingDataFrameModel(pt.Model):
 
 # Validates the transcript metadata.
 class TranscriptDataFrameModel(PreScrapingDataFrameModel):
-    """Does a basic validaton on the transcript records.
+    r"""Does a basic validaton on the transcript records.
     Does not validate the content of the transcript.
     Based on PreScrapingDataFrameModel.
 
@@ -78,7 +80,7 @@ class TranscriptDataFrameModel(PreScrapingDataFrameModel):
     )
     # txt_url: str = pt.Field() # Currently, vtt_to_txt.php is not available on ATP, so this field is unused
     vtt: str = pt.Field(unique=True, min_length=5)
-    transcript: str = pt.Field(unique=True, min_length=5)
+    transcript: str = pt.Field(min_length=5)
     transcript_hash: int = pt.Field(unique=True)
 
 
@@ -88,23 +90,36 @@ class ChunkedRecordDataFrameModel(PreScrapingDataFrameModel):
     """Does a basic validaton on the chunk records.
     Based on PreScrapingDataFrameModel.
 
+    - chunk_id: str - The video_id concatenated with chunk_number. Must be unique
+    - chunk_number: int - The chronological number of the chunk made from chunking the transcript.
     - mp4_url: str - Must be unique. Must conform to mp4_url_pattern.
+    - token_count: int - The number of tokens in the chunk.
     - chunk: str - The chunk to be embedded in vector search.
 
     (inherited fields:)
-    - video_id: int - Primary key at this stage. Must be unique.
-    - section: str - The name of the section this link was extracted from. Must be over 3 chars long
-    - title: str = The title associated with this link. Must be over 3 chars long
-    - preacher: str = The preacher associated with this link. Must be over 3 chars long
+    - video_id: int - The ID of the source video. Not unique anymore, since now each video divided into unique chunks with the same video_id.
+    - section: str - The name of the section this link was extracted from. Must be over 3 chars long.
+    - title: str = The title associated with this link. Must be over 3 chars long.
+    - preacher: str = The preacher associated with this link. Must be over 3 chars long.
     - video_url: str = The video url derived from video_id. Must be unique.
     Must conform to this pattern: '^https://allthepreaching.com/pages/video.php\?id=\d+$'
     """
 
-    mp4_url: str = pt.Field(
+    video_id: int = pt.Field()
+    video_url: str = pt.Field()
+    chunk_id: str = pt.Field(
         unique=True,
+        derived_from=pl.col("video_id").cast(str)
+        + pl.lit("_")
+        + pl.col("chunk_number").cast(str),
+    )
+    chunk_number: int = pt.Field()
+    chunks_count: int = pt.Field()
+    mp4_url: str = pt.Field(
         pattern=mp4_url_pattern,
     )
-    chunk: str = pt.Field(min_length=5)
+    token_count: int = pt.Field()
+    chunk: str = pt.Field(unique=True, min_length=5)
 
 
 def get_records_from_archive_url(
@@ -293,8 +308,8 @@ def to_pre_scraping_df(
     try:
         df.validate()
     except pt.DataFrameValidationError as e:
-        print(e)
-        # raise(e)
+        # print(e)
+        raise (e)
     return df
 
 
@@ -334,14 +349,55 @@ def to_transcript_df(df: pt.DataFrame) -> pt.DataFrame:
     try:
         df.validate()
     except pt.DataFrameValidationError as e:
-        print(e)
-        # raise(e)
+        # print(e)
+        raise (e)
     return df
 
 
-def to_chunked_record_df():
-
-    pass
+def to_chunked_record_df(df_transcript: pt.DataFrame) -> pt.DataFrame:
+    # Load tokenizer
+    tokenizer = AutoTokenizer.from_pretrained("sentence-transformers/all-MiniLM-L6-v2")
+    chunk_overlap = 30
+    chunk_size = 256  # max tokens per chunk
+    chunker = semchunk.chunkerify(tokenizer, chunk_size)
+    df_chunks = ChunkedRecordDataFrameModel.DataFrame()
+    for i, transcript in enumerate(df_transcript["transcript"]):
+        video_id = df_transcript.item(i, 0)
+        chunks = chunker(transcript, overlap=chunk_overlap)
+        indexes = list(range(1, len(chunks) + 1))
+        token_counts = [len(tokenizer.tokenize(chunk)) for chunk in chunks]
+        chunks_count = [len(chunks) for chunk in chunks]
+        df_chunks.vstack(
+            pl.DataFrame(
+                {
+                    "chunk": chunks,
+                    "chunk_number": indexes,
+                    "token_count": token_counts,
+                    "chunks_count": chunks_count,
+                }
+            ).join(
+                df_transcript.filter(pl.col("video_id").eq(video_id)).drop(
+                    ["vtt", "transcript", "mp3_url", "vtt_url", "transcript_hash"]
+                ),
+                how="cross",
+            ),
+            in_place=True,
+        )
+    df_chunks = df_chunks.with_columns(
+        (
+            pl.col("video_id").cast(pl.String)
+            + pl.lit("_")
+            + pl.col("chunk_number").cast(pl.String)
+        ).alias("chunk_id")
+    )
+    try:
+        df_chunks.validate()
+    except pt.DataFrameValidationError as e:
+        print(e)
+        # raise(e)
+    # (Pandas version, irrelevant now) took 48.5 minutes to run with 16122 transcripts, 30 overlap, 256 size, resulting in 985480 chunks
+    # Projected to take 90 minutes with 16k transcripts, have not tested. Maybe it's slower due to patito validation.
+    return df_chunks
 
 
 # message_404 = """<!DOCTYPE HTML PUBLIC "-//IETF//DTD HTML 2.0//EN">\n<html><head>\n<title>404 Not Found</title>\n</head><body>\n<h1>Not Found</h1>\n<p>The requested URL was not found on this server.</p>\n</body></html>\n"""
